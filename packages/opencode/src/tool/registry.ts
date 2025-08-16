@@ -94,7 +94,7 @@ export namespace ToolRegistry {
     }
 
     // If MORPH_API_KEY exists, only enable morphedit and disable other edit tools
-    if (process.env.MORPH_API_KEY) {
+    if (process.env["MORPH_API_KEY"]) {
       result["edit"] = false
       result["multiedit"] = false
       result["patch"] = false

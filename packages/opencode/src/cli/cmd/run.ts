@@ -10,6 +10,8 @@ import { bootstrap } from "../bootstrap"
 import { MessageV2 } from "../../session/message-v2"
 import { Identifier } from "../../id/id"
 import { Agent } from "../../agent/agent"
+import { readFileSync, existsSync } from "fs"
+import * as path from "path"
 
 const TOOL: Record<string, [string, string]> = {
   todowrite: ["Todo", UI.Style.TEXT_WARNING_BOLD],
@@ -58,11 +60,40 @@ export const RunCommand = cmd({
         type: "string",
         describe: "agent to use",
       })
+      .option("file", {
+        type: "string",
+        alias: ["f"],
+        describe: "read message from file (defaults to 'agent-instruction.txt')",
+      })
+      .option("batch", {
+        type: "boolean",
+        alias: ["b"],
+        describe: "run in batch mode (non-interactive, minimal output)",
+        default: true,
+      })
   },
   handler: async (args) => {
     let message = args.message.join(" ")
 
-    if (!process.stdin.isTTY) message += "\n" + (await Bun.stdin.text())
+    // Handle file input
+    const defaultFile = "agent-instruction.txt"
+    const inputFile = args.file || (existsSync(defaultFile) ? defaultFile : null)
+    
+    if (inputFile) {
+      if (!existsSync(inputFile)) {
+        UI.error(`File not found: ${inputFile}`)
+        return
+      }
+      const fileContent = readFileSync(inputFile, "utf-8")
+      message = message ? `${message}\n\n${fileContent}` : fileContent
+    } else if (!process.stdin.isTTY) {
+      message += "\n" + (await Bun.stdin.text())
+    }
+
+    if (!message.trim()) {
+      UI.error("No message provided. Use arguments, stdin, or --file option.")
+      return
+    }
 
     await bootstrap({ cwd: process.cwd() }, async () => {
       const session = await (async () => {
@@ -121,45 +152,63 @@ export const RunCommand = cmd({
       }
 
       let text = ""
-      Bus.subscribe(MessageV2.Event.PartUpdated, async (evt) => {
-        if (evt.properties.part.sessionID !== session.id) return
-        if (evt.properties.part.messageID === messageID) return
-        const part = evt.properties.part
-
-        if (part.type === "tool" && part.state.status === "completed") {
-          const [tool, color] = TOOL[part.tool] ?? [part.tool, UI.Style.TEXT_INFO_BOLD]
-          const title =
-            part.state.title ||
-            (Object.keys(part.state.input).length > 0 ? JSON.stringify(part.state.input) : "Unknown")
-          printEvent(color, tool, title)
-        }
-
-        if (part.type === "text") {
-          text = part.text
-
-          if (part.time?.end) {
-            UI.empty()
-            UI.println(UI.markdown(text))
-            UI.empty()
-            text = ""
-            return
-          }
-        }
-      })
-
       let errorMsg: string | undefined
-      Bus.subscribe(Session.Event.Error, async (evt) => {
-        const { sessionID, error } = evt.properties
-        if (sessionID !== session.id || !error) return
-        let err = String(error.name)
 
-        if ("data" in error && error.data && "message" in error.data) {
-          err = error.data.message
-        }
-        errorMsg = errorMsg ? errorMsg + "\n" + err : err
+      // Only set up interactive UI in non-batch mode
+      if (!args.batch) {
+        Bus.subscribe(MessageV2.Event.PartUpdated, async (evt) => {
+          if (evt.properties.part.sessionID !== session.id) return
+          if (evt.properties.part.messageID === messageID) return
+          const part = evt.properties.part
 
-        UI.error(err)
-      })
+          if (part.type === "tool" && part.state.status === "completed") {
+            const [tool, color] = TOOL[part.tool] ?? [part.tool, UI.Style.TEXT_INFO_BOLD]
+            const title =
+              part.state.title ||
+              (Object.keys(part.state.input).length > 0 ? JSON.stringify(part.state.input) : "Unknown")
+            printEvent(color, tool, title)
+          }
+
+          if (part.type === "text") {
+            text = part.text
+
+            if (part.time?.end) {
+              UI.empty()
+              UI.println(UI.markdown(text))
+              UI.empty()
+              text = ""
+              return
+            }
+          }
+        })
+
+        Bus.subscribe(Session.Event.Error, async (evt) => {
+          const { sessionID, error } = evt.properties
+          if (sessionID !== session.id || !error) return
+          const err_obj = error as any
+          let err = String(err_obj.name)
+
+          if ("data" in err_obj && err_obj.data && "message" in err_obj.data) {
+            err = err_obj.data.message
+          }
+          errorMsg = errorMsg ? errorMsg + "\n" + err : err
+
+          UI.error(err)
+        })
+      } else {
+        // In batch mode, collect errors silently
+        Bus.subscribe(Session.Event.Error, async (evt) => {
+          const { sessionID, error } = evt.properties
+          if (sessionID !== session.id || !error) return
+          const err_obj = error as any
+          let err = String(err_obj.name)
+
+          if ("data" in err_obj && err_obj.data && "message" in err_obj.data) {
+            err = err_obj.data.message
+          }
+          errorMsg = errorMsg ? errorMsg + "\n" + err : err
+        })
+      }
 
       const messageID = Identifier.ascending("message")
       const result = await Session.chat({
@@ -181,13 +230,19 @@ export const RunCommand = cmd({
         ],
       })
 
+      // Handle output based on mode
       const isPiped = !process.stdout.isTTY
-      if (isPiped) {
+      if (args.batch || isPiped) {
         const match = result.parts.findLast((x) => x.type === "text")
-        if (match) process.stdout.write(UI.markdown(match.text))
-        if (errorMsg) process.stdout.write(errorMsg)
+        if (match) {
+          console.log(match.text)
+        }
+        if (errorMsg) {
+          console.error(errorMsg)
+        }
+      } else {
+        UI.empty()
       }
-      UI.empty()
     })
   },
 })

@@ -25,7 +25,7 @@ class MorphClient {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "Authorization": `Bearer ${this.apiKey}`,
+        Authorization: `Bearer ${this.apiKey}`,
       },
       body: JSON.stringify({
         model: "morph-v3-large",
@@ -59,8 +59,16 @@ export const MorphEditTool = Tool.define("morphedit", {
   description: DESCRIPTION,
   parameters: z.object({
     target_file: z.string().describe("The target file to modify"),
-    instructions: z.string().describe("A single sentence written in the first person describing what you're changing. Used to help disambiguate uncertainty in the edit."),
-    code_edit: z.string().describe("Specify ONLY the precise lines of code that you wish to edit. Use `// ... existing code ...` for unchanged sections."),
+    instructions: z
+      .string()
+      .describe(
+        "A single sentence written in the first person describing what you're changing. Used to help disambiguate uncertainty in the edit.",
+      ),
+    code_edit: z
+      .string()
+      .describe(
+        "Specify ONLY the precise lines of code that you wish to edit. Use `// ... existing code ...` for unchanged sections.",
+      ),
   }),
   async execute(params, ctx) {
     if (!params.target_file) {
@@ -76,33 +84,35 @@ export const MorphEditTool = Tool.define("morphedit", {
     }
 
     // Check for Morph API key
-    const morphApiKey = process.env.MORPH_API_KEY
+    const morphApiKey = process.env["MORPH_API_KEY"]
     if (!morphApiKey) {
       throw new Error("MORPH_API_KEY environment variable is required for morphedit tool")
     }
 
     const app = App.info()
-    const filePath = path.isAbsolute(params.target_file) ? params.target_file : path.join(app.path.cwd, params.target_file)
-    
+    const filePath = path.isAbsolute(params.target_file)
+      ? params.target_file
+      : path.join(app.path.cwd, params.target_file)
+
     if (!Filesystem.contains(app.path.cwd, filePath)) {
       throw new Error(`File ${filePath} is not in the current working directory`)
     }
 
     const agent = await Agent.get(ctx.agent)
-    
+
     // Read the existing file
     const file = Bun.file(filePath)
     const stats = await file.stat().catch(() => {})
     if (!stats) throw new Error(`File ${filePath} not found`)
     if (stats.isDirectory()) throw new Error(`Path is a directory, not a file: ${filePath}`)
-    
+
     await FileTime.assert(ctx.sessionID, filePath)
     const initialCode = await file.text()
 
     // Use Morph API to apply the edit
     const morphClient = new MorphClient(morphApiKey)
     let mergedCode: string
-    
+
     try {
       mergedCode = await morphClient.apply(params.instructions, initialCode, params.code_edit)
     } catch (error) {
@@ -110,7 +120,7 @@ export const MorphEditTool = Tool.define("morphedit", {
     }
 
     const diff = trimDiff(createTwoFilesPatch(filePath, filePath, initialCode, mergedCode))
-    
+
     // Check permissions if needed
     if (agent.permission.edit === "ask") {
       await Permission.ask({
