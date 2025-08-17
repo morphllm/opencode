@@ -1,6 +1,6 @@
 {
-  "name": "@opencode/cloud-web",
-  "version": "0.4.45",
+  "name": "@morphcli/cloud-web",
+  "version": "1.0.0",
   "private": true,
   "description": "",
   "type": "module",

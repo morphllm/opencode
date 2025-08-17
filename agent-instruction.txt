@@ -1,0 +1,260 @@
+You are a specialized coding agent running in an existing AI coding agent repository. Your task is to integrate Morph Fast Apply API into this codebase to replace traditional file editing tools with intelligent code merging.
+
+## Your Mission
+
+Install and integrate Morph Fast Apply API (https://docs.morphllm.com/quickstart) into this coding agent's tool system. Morph processes code edits at 4500+ tokens/second with 99.2% accuracy using intelligent merging instead of full file rewrites.
+
+## What You Need To Do
+
+1. **Analyze the current tool system:**
+   - Find the existing tool registry and file editing tools
+   - Understand how tools are registered and used
+   - Look for patterns in `packages/opencode/src/tool/` directory
+
+2. **Create a new `edit_file` tool that uses Morph:**
+   - Add tool definition following existing patterns
+   - Implement Morph API integration using the format from https://docs.morphllm.com/quickstart
+   - Use the special `// ... existing code ...` syntax for unchanged sections
+   - Handle file reading, API calls, and file writing
+
+3. **Required Morph integration details:**
+   - API endpoint: `https://api.morphllm.com/v1`
+   - Model: `morph-v3-large`
+   - Input format: `<instruction>${instructions}</instruction>\n<code>${initialCode}</code>\n<update>${codeEdit}</update>`
+   - Environment variable: `MORPH_API_KEY`
+
+4. **Tool specification:**
+   ```
+   Parameters:
+   - target_file (string, required): The target file to modify
+   - instructions (string, required): First-person description of the change
+   - code_edit (string, required): Precise lines with // ... existing code ... for unchanged sections
+   ```
+
+5. **Register the tool:**
+   - Add to tool registry
+   - Follow existing naming and export patterns
+   - Ensure proper error handling and validation
+
+## Key Implementation Notes
+
+- Study existing tools eg. `edit.ts`, `write.ts`, and `read.ts` for patterns
+- Read as many files as possible to get a sense of where the Claude or Gemini or whatever AI library they're using is and where it's getting tools from.
+- The new tool we add should read the target file, call Morph API for merging, then write the result
+- Include proper TypeScript types and error handling
+- Add helpful descriptions and examples in the tool's .txt file
+- Ensure the tool integrates seamlessly with the existing agent architecture
+
+## Success Criteria
+
+The agent should be able to use the new `edit_file` tool to make precise code edits using Morph's intelligent merging, replacing the need for full file rewrites or complex search-and-replace operations.
+
+Begin by exploring the current tool system structure. Read where tools are defined, then how the agent accesses them. If there are other agent edit tools, we should conditionally exclude them in favor of the edit file tool you make for morph if MORPH_API_KEY is set.
+
+Then implement the Morph integration following the established patterns in this codebase.
+
+Scenarios: 
+- If the agent already has access to multiple edit tools, and the Morph API key is set, those edit tools should be disabled, and only Morphs edit_file tool should be enabled. If no Morph API key is set, the agent should use the existing edit tools as is.
+
+
+Morph Docs: 
+# Quickstart: Fast Apply
+
+> Replace full file rewrites or search and replace with Fast Apply in 5 minutes
+
+## Overview
+
+What is Morph for?
+Morph Fast Apply looks like a new edit\_file tool you give your agent access to. That's it.
+Claude will output lazily into this tool when it wants to make an edit.
+In the tools execution, the Morph API will merge the lazy edit output by Claude/Gemini/etc. into the file.
+
+If you like using Cursor - you already like the Fast Apply UX. Fast Apply is a concept [used in Cursor](https://web.archive.org/web/20240823050616/https://www.cursor.com/blog/instant-apply).
+
+## How to use Morph Fast Apply
+
+<Card title="Try the API Playground" icon="play" href="https://morphllm.com/dashboard/playground/apply" horizontal>
+  Test the Apply Model with live examples in our interactive playground
+</Card>
+
+<Steps>
+  <Step title="1. Add an edit_file tool to your agent">
+    Add the `edit_file` tool to your agent. Use one of the formats below.
+
+    <Tabs>
+      <Tab title="General Prompt">
+        ````xml Tool Description
+        Use this tool to make an edit to an existing file.
+
+        This will be read by a less intelligent model, which will quickly apply the edit. You should make it clear what the edit is, while also minimizing the unchanged code you write.
+        When writing the edit, you should specify each edit in sequence, with the special comment // ... existing code ... to represent unchanged code in between edited lines.
+
+        For example:
+
+        // ... existing code ...
+        FIRST_EDIT
+        // ... existing code ...
+        SECOND_EDIT
+        // ... existing code ...
+        THIRD_EDIT
+        // ... existing code ...
+
+        You should still bias towards repeating as few lines of the original file as possible to convey the change.
+        But, each edit should contain minimally sufficient context of unchanged lines around the code you're editing to resolve ambiguity.
+        DO NOT omit spans of pre-existing code (or comments) without using the // ... existing code ... comment to indicate its absence. If you omit the existing code comment, the model may inadvertently delete these lines.
+        If you plan on deleting a section, you must provide context before and after to delete it. If the initial code is ```code \n Block 1 \n Block 2 \n Block 3 \n code```, and you want to remove Block 2, you would output ```// ... existing code ... \n Block 1 \n  Block 3 \n // ... existing code ...```.
+        Make sure it is clear what the edit should be, and where it should be applied.
+        Make edits to a file in a single edit_file call instead of multiple edit_file calls to the same file. The apply model can handle many distinct edits at once.
+        ````
+
+        **Parameters:**
+
+        * `target_file` (string, required): The target file to modify
+        * `instructions` (string, required): A single sentence written in the first person describing what you're changing. Used to help disambiguate uncertainty in the edit.
+        * `code_edit` (string, required): Specify ONLY the precise lines of code that you wish to edit. Use `// ... existing code ...` for unchanged sections.
+      </Tab>
+
+      <Tab title="JSON Tool (Claude)">
+        ````json Tool Definition
+        {
+          "name": "edit_file",
+          "description": "Use this tool to make an edit to an existing file.\n\nThis will be read by a less intelligent model, which will quickly apply the edit. You should make it clear what the edit is, while also minimizing the unchanged code you write.\nWhen writing the edit, you should specify each edit in sequence, with the special comment // ... existing code ... to represent unchanged code in between edited lines.\n\nFor example:\n\n// ... existing code ...\nFIRST_EDIT\n// ... existing code ...\nSECOND_EDIT\n// ... existing code ...\nTHIRD_EDIT\n// ... existing code ...\n\nYou should still bias towards repeating as few lines of the original file as possible to convey the change.\nBut, each edit should contain minimally sufficient context of unchanged lines around the code you're editing to resolve ambiguity.\nDO NOT omit spans of pre-existing code (or comments) without using the // ... existing code ... comment to indicate its absence. If you omit the existing code comment, the model may inadvertently delete these lines.\nIf you plan on deleting a section, you must provide context before and after to delete it. If the initial code is ```code \\n Block 1 \\n Block 2 \\n Block 3 \\n code```, and you want to remove Block 2, you would output ```// ... existing code ... \\n Block 1 \\n  Block 3 \\n // ... existing code ...```.\nMake sure it is clear what the edit should be, and where it should be applied.\nMake edits to a file in a single edit_file call instead of multiple edit_file calls to the same file. The apply model can handle many distinct edits at once.",
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "target_file": {
+                "type": "string",
+                "description": "Name or path of target file to modify."
+              },
+              "instructions": {
+                "type": "string",
+                "description": "A single sentence instruction describing what you are going to do for the sketched edit. This is used to assist the less intelligent model in applying the edit. Use the first person to describe what you are going to do. Use it to disambiguate uncertainty in the edit."
+              },
+              "code_edit": {
+                "type": "string",
+                "description": "Specify ONLY the precise lines of code that you wish to edit. NEVER specify or write out unchanged code. Instead, represent all unchanged code using the comment of the language you're editing in - example: // ... existing code ..."
+              }
+            },
+            "required": ["target_file", "instructions", "code_edit"]
+          }
+        }
+        ````
+      </Tab>
+    </Tabs>
+
+    <Warning>
+      The `instructions` field should be generated by your AI model, not user input.
+      Follow the tool description above nearly verbatim - terminology like "use it
+      to disambiguate uncertainty in the edit" should be used. Example: "I am adding
+      error handling to the user authentication function"
+    </Warning>
+  </Step>
+
+  <Step title="Merge with Morph Fast Apply">
+    Your tool's execution should use Morph's API to merge the code, as well as write the code to a file.
+
+    <CodeGroup>
+      ```typescript TypeScript highlight={13}
+      import OpenAI from "openai";
+
+      const openai = new OpenAI({
+        apiKey: process.env.MORPH_API_KEY,
+        baseURL: "https://api.morphllm.com/v1",
+      });
+
+      const response = await openai.chat.completions.create({
+        model: "morph-v3-large",
+        messages: [
+          {
+            role: "user",
+            content: `<instruction>${instructions}</instruction>\n<code>${initialCode}</code>\n<update>${codeEdit}</update>`,
+          },
+        ],
+      });
+
+      const mergedCode = response.choices[0].message.content;
+      ```
+
+      ```python Python highlight={14}
+      import os
+      from openai import OpenAI
+
+      client = OpenAI(
+          api_key=os.getenv("MORPH_API_KEY"),
+          base_url="https://api.morphllm.com/v1"
+      )
+
+      response = client.chat.completions.create(
+          model="morph-v3-large",
+          messages=[
+              {
+                  "role": "user",
+                  "content": f"<instruction>{instructions}</instruction>\n<code>{initial_code}</code>\n<update>{code_edit}</update>"
+              }
+          ]
+      )
+
+      merged_code = response.choices[0].message.content
+      ```
+
+      ```bash cURL highlight={9}
+      curl -X POST "https://api.morphllm.com/v1/chat/completions" \
+        -H "Authorization: Bearer $MORPH_API_KEY" \
+        -H "Content-Type: application/json" \
+        -d '{
+          "model": "morph-v3-large",
+          "messages": [
+            {
+              "role": "user",
+              "content": "<instruction>INSTRUCTIONS</instruction>\n<code>INITIAL_CODE</code>\n<update>CODE_EDIT</update>"
+            }
+          ]
+        }'
+      ```
+    </CodeGroup>
+  </Step>
+
+  <Step title="Handle the Response">
+    Extract the merged code from the API response. Use your filesystem to write the code to a file.
+
+    **Response Format:**
+
+    ```json
+    final_code = response.choices[0].message.content
+    ```
+
+    **Extract the Final Code:**
+
+    <CodeGroup>
+      ```typescript extract_code.ts
+      const finalCode = response.choices[0].message.content;
+      // Write to file or return to your application
+      await fs.writeFile(targetFile, finalCode);
+      ```
+
+      ```python extract_code.py
+      final_code = response.choices[0].message.content
+      # Write to file or return to your application
+      with open(target_file, 'w') as f:
+          f.write(final_code)
+      ```
+
+      ```bash cURL
+      # The response contains the merged code directly
+      echo "$response" > output_file.js
+      ```
+    </CodeGroup>
+  </Step>
+</Steps>
+
+## Next Steps
+
+Ready to start building with Morph? Here's what to do next:
+
+<Card title="Explore the Apply API" icon="code" href="/api-reference/endpoint/apply" horizontal>
+  Learn about the Apply API endpoints for production use
+</Card>
+
+<Card title="Build Agentic Tools" icon="wrench" href="/guides/agent-tools" horizontal>
+  Create edit\_file tools for AI agents and development environments
+</Card>
