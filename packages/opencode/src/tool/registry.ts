@@ -15,11 +15,13 @@ import { InvalidTool } from "./invalid"
 import type { Agent } from "../agent/agent"
 
 export namespace ToolRegistry {
+  // Use Morph Fast Apply as the default edit tool if MORPH_API_KEY is present
+  const DefaultEditTool = process.env['MORPH_API_KEY'] ? MorphEditTool : EditTool
+
   const ALL = [
     InvalidTool,
     BashTool,
-    EditTool,
-    MorphEditTool,
+    DefaultEditTool,
     WebFetchTool,
     GlobTool,
     GrepTool,
@@ -47,21 +49,21 @@ export namespace ToolRegistry {
     if (providerID === "openai") {
       return result.map((t) => ({
         ...t,
-        parameters: optionalToNullable(t.parameters),
+        parameters: optionalToNullable(t.parameters as z.ZodTypeAny),
       }))
     }
 
     if (providerID === "azure") {
       return result.map((t) => ({
         ...t,
-        parameters: optionalToNullable(t.parameters),
+        parameters: optionalToNullable(t.parameters as z.ZodTypeAny),
       }))
     }
 
     if (providerID === "google") {
       return result.map((t) => ({
         ...t,
-        parameters: sanitizeGeminiParameters(t.parameters),
+        parameters: sanitizeGeminiParameters(t.parameters as z.ZodTypeAny),
       }))
     }
 
@@ -91,16 +93,6 @@ export namespace ToolRegistry {
     if (modelID.includes("qwen")) {
       result["todowrite"] = false
       result["todoread"] = false
-    }
-
-    // If MORPH_API_KEY exists, only enable morphedit and disable other edit tools
-    if (process.env["MORPH_API_KEY"]) {
-      result["edit"] = false
-      result["multiedit"] = false
-      result["patch"] = false
-    } else {
-      // If no MORPH_API_KEY, disable morphedit tool
-      result["morphedit"] = false
     }
 
     return result

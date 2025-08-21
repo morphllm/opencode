@@ -10,6 +10,7 @@ import { Bus } from "../bus"
 import { FileTime } from "../file/time"
 import { Filesystem } from "../util/filesystem"
 import { Agent } from "../agent/agent"
+import { LSP } from "../lsp"
 
 // OpenAI-compatible client for Morph API
 class MorphClient {
@@ -55,7 +56,7 @@ function trimDiff(diff: string): string {
     .join("\n")
 }
 
-export const MorphEditTool = Tool.define("morphedit", {
+export const MorphEditTool = Tool.define("edit", {
   description: DESCRIPTION,
   parameters: z.object({
     target_file: z.string().describe("The target file to modify"),
@@ -84,7 +85,7 @@ export const MorphEditTool = Tool.define("morphedit", {
     }
 
     // Check for Morph API key
-    const morphApiKey = process.env["MORPH_API_KEY"]
+    const morphApiKey = process.env['MORPH_API_KEY']
     if (!morphApiKey) {
       throw new Error("MORPH_API_KEY environment variable is required for morphedit tool")
     }
@@ -128,10 +129,11 @@ export const MorphEditTool = Tool.define("morphedit", {
         sessionID: ctx.sessionID,
         messageID: ctx.messageID,
         callID: ctx.callID,
-        title: "Edit this file: " + filePath,
+        title: "🚀 Morph Fast Apply: " + filePath,
         metadata: {
           filePath,
           diff,
+          morphApplied: true,
         },
       })
     }
@@ -142,15 +144,31 @@ export const MorphEditTool = Tool.define("morphedit", {
       file: filePath,
     })
 
-    // Return the result
+    FileTime.read(ctx.sessionID, filePath)
+
+    let output = ""
+    await LSP.touchFile(filePath, true)
+    const diagnostics = await LSP.diagnostics()
+    for (const [file, issues] of Object.entries(diagnostics)) {
+      if (issues.length === 0) continue
+      if (file === filePath) {
+        output += `\nThis file has errors, please fix\n<file_diagnostics>\n${issues.map(LSP.Diagnostic.pretty).join("\n")}\n</file_diagnostics>\n`
+        continue
+      }
+      output += `\n<project_diagnostics>\n${file}\n${issues
+        .filter((item) => item.severity === 1)
+        .map(LSP.Diagnostic.pretty)
+        .join("\n")}\n</project_diagnostics>\n`
+    }
+
     return {
-      title: path.relative(app.path.root, filePath),
       metadata: {
-        filePath,
+        diagnostics,
         diff,
         morphApplied: true,
       },
-      output: `Successfully applied edit to ${path.relative(app.path.root, filePath)} using Morph Fast Apply:\n\n${diff}`,
+      title: `🚀 ${path.relative(app.path.root, filePath)}`,
+      output: output || `Successfully applied edit using Morph Fast Apply:\n\n${diff}`,
     }
   },
 })
